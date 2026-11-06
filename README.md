@@ -1,3 +1,3 @@
-# Mirror release simulator
+# Upstream release simulator
 
-This repository simulates upstream release synchronization, custom patch injection, and a downstream GitHub Actions release.
+This repository simulates an upstream project that publishes versioned GitHub Releases.
