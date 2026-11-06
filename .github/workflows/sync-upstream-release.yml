@@ -1,0 +1,86 @@
+name: Simulation Sync Upstream Release
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Optional upstream tag, for example v0.1.0'
+        required: false
+        type: string
+
+concurrency:
+  group: simulation-upstream-sync
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    env:
+      UPSTREAM_REPOSITORY: kawauiyi1888/dev-sidecar-sim-upstream
+      RELEASE_TAG_INPUT: ${{ inputs.release_tag || '' }}
+      SYNC_TOKEN: ${{ secrets.SYNC_TOKEN }}
+      GIT_TERMINAL_PROMPT: 0
+    steps:
+      - name: Require sync token
+        shell: bash
+        run: test -n "$SYNC_TOKEN"
+      - name: Checkout mirror
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.SYNC_TOKEN }}
+      - name: Resolve upstream release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.SYNC_TOKEN }}
+        run: |
+          set -euo pipefail
+          git config user.name simulation-bot
+          git config user.email simulation-bot@users.noreply.github.com
+          git remote add upstream "https://${UPSTREAM_REPOSITORY}.git"
+          git fetch upstream main --tags --force
+          release_tag="${RELEASE_TAG_INPUT}"
+          if [[ -z "$release_tag" ]]; then
+            release_tag="$(gh api "repos/${UPSTREAM_REPOSITORY}/releases/latest" --jq .tag_name)"
+          fi
+          [[ "$release_tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          git fetch upstream "refs/tags/${release_tag}:refs/tags/upstream-release/${release_tag}"
+          echo "RELEASE_TAG=${release_tag}" >> "$GITHUB_ENV"
+      - name: Skip existing tag
+        id: check
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git ls-remote --exit-code origin "refs/tags/${RELEASE_TAG}" >/dev/null 2>&1; then
+            echo needs_sync=false >> "$GITHUB_OUTPUT"
+          else
+            echo needs_sync=true >> "$GITHUB_OUTPUT"
+          fi
+      - name: Import exact upstream release and push tag
+        if: steps.check.outputs.needs_sync == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git switch main
+          source_dir="$RUNNER_TEMP/upstream-source"
+          rm -rf "$source_dir" && mkdir -p "$source_dir"
+          git archive "refs/tags/upstream-release/${RELEASE_TAG}" | tar -x -C "$source_dir"
+          git ls-files -z | while IFS= read -r -d "" file; do
+            case "$file" in
+              .github/*|custom/*|SIMULATION.md) ;;
+              *) rm -f "$file" ;;
+            esac
+          done
+          find "$source_dir" -mindepth 1 -maxdepth 1 -exec cp -a {} . \;
+          git add -A
+          if ! git diff --cached --quiet; then
+            git commit -m "chore(sync): import upstream ${RELEASE_TAG}"
+          fi
+          git tag -f "$RELEASE_TAG"
+          git push origin HEAD:main
+          git push origin "refs/tags/${RELEASE_TAG}:refs/tags/${RELEASE_TAG}"

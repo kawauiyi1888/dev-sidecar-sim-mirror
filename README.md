@@ -1,2 +1,3 @@
-# dev-sidecar-sim-mirror
-Temporary downstream mirror and release simulator for dev-sidecar automation
+# Mirror release simulator
+
+This repository simulates upstream release synchronization, custom patch injection, and a downstream GitHub Actions release.

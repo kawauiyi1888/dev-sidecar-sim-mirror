@@ -1,0 +1,52 @@
+name: Simulation Build And Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply custom patches
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          patches=(custom/patches/*.patch)
+          for patch in "${patches[@]}"; do
+            git apply --check --whitespace=error "$patch"
+            git apply --whitespace=error "$patch"
+          done
+          echo "Applied ${#patches[@]} custom patch(es)."
+      - name: Build simulation asset
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          mkdir -p dist
+          if grep -Fq "custom code injected by mirror" message.txt; then custom_status=applied; else custom_status=absent; fi
+          {
+            echo "version=${version}"
+            echo "message=$(tr "\n" " " < message.txt)"
+            echo "custom_patch=${custom_status}"
+          } > "dist/sim-artifact-${GITHUB_REF_NAME}.txt"
+          cat "dist/sim-artifact-${GITHUB_REF_NAME}.txt"
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh release create "$GITHUB_REF_NAME" "dist/sim-artifact-${GITHUB_REF_NAME}.txt"
+            --repo "$GITHUB_REPOSITORY"
+            --title "$GITHUB_REF_NAME"
+            --notes "Simulation build generated from the upstream release tag."
