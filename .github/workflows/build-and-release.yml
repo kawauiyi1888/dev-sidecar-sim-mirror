@@ -46,7 +46,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          gh release create "$GITHUB_REF_NAME" "dist/sim-artifact-${GITHUB_REF_NAME}.txt"
-            --repo "$GITHUB_REPOSITORY"
-            --title "$GITHUB_REF_NAME"
+          gh release create "$GITHUB_REF_NAME" "dist/sim-artifact-${GITHUB_REF_NAME}.txt" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "$GITHUB_REF_NAME" \
             --notes "Simulation build generated from the upstream release tag."
